@@ -4,19 +4,20 @@ using ModestTree;
 
 namespace Zenject
 {
-    public class SubContainerMethodBindingFinalizer : ProviderBindingFinalizer
+    public class SubContainerBindingFinalizer : ProviderBindingFinalizer
     {
         readonly object _subIdentifier;
-        readonly Action<DiContainer> _installMethod;
         readonly bool _resolveAll;
+        readonly Func<DiContainer, ISubContainerCreator> _creatorFactory;
 
-        public SubContainerMethodBindingFinalizer(
-            BindInfo bindInfo, Action<DiContainer> installMethod, object subIdentifier, bool resolveAll)
+        public SubContainerBindingFinalizer(
+            BindInfo bindInfo, object subIdentifier,
+            bool resolveAll, Func<DiContainer, ISubContainerCreator> creatorFactory)
             : base(bindInfo)
         {
             _subIdentifier = subIdentifier;
-            _installMethod = installMethod;
             _resolveAll = resolveAll;
+            _creatorFactory = creatorFactory;
         }
 
         protected override void OnFinalizeBinding(DiContainer container)
@@ -40,26 +41,24 @@ namespace Zenject
             {
                 case ScopeTypes.Transient:
                 {
-                    // Note: each contract/concrete pair gets its own container here
-                    RegisterProvidersPerContractAndConcreteType(
+                    RegisterProvidersForAllContractsPerConcreteType(
                         container,
                         concreteTypes,
-                        (contractType, concreteType) => new SubContainerDependencyProvider(
-                            concreteType, _subIdentifier,
-                            new SubContainerCreatorByMethod(container, _installMethod), _resolveAll));
+                        (_, concreteType) =>
+                            new SubContainerDependencyProvider(
+                                concreteType, _subIdentifier, _creatorFactory(container), _resolveAll));
                     break;
                 }
                 case ScopeTypes.Singleton:
                 {
-                    var creator = new SubContainerCreatorCached(
-                        new SubContainerCreatorByMethod(container, _installMethod));
+                    var containerCreator = new SubContainerCreatorCached(_creatorFactory(container));
 
-                    // Note: each contract/concrete pair gets its own container
                     RegisterProvidersForAllContractsPerConcreteType(
                         container,
                         concreteTypes,
-                        (_, concreteType) => new SubContainerDependencyProvider(
-                            concreteType, _subIdentifier, creator, _resolveAll));
+                        (_, concreteType) =>
+                            new SubContainerDependencyProvider(
+                                concreteType, _subIdentifier, containerCreator, _resolveAll));
                     break;
                 }
                 default:
@@ -80,15 +79,12 @@ namespace Zenject
                     RegisterProviderPerContract(
                         container,
                         (_, contractType) => new SubContainerDependencyProvider(
-                            contractType, _subIdentifier,
-                            new SubContainerCreatorByMethod(
-                                container, _installMethod), _resolveAll));
+                            contractType, _subIdentifier, _creatorFactory(container), _resolveAll));
                     break;
                 }
                 case ScopeTypes.Singleton:
                 {
-                    var containerCreator = new SubContainerCreatorCached(
-                        new SubContainerCreatorByMethod(container, _installMethod));
+                    var containerCreator = new SubContainerCreatorCached(_creatorFactory(container));
 
                     RegisterProviderPerContract(
                         container,
